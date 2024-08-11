@@ -1,4 +1,6 @@
+import crypto from "crypto";
 import jwt from "jsonwebtoken";
+import { Token } from "../models/token.model.js";
 import { User } from "../models/user.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
@@ -38,21 +40,27 @@ const register = asyncHandler(async (req, res) => {
   const avatar = await cloudinaryUpload(avatarLoacalPath, "ecom/user");
   const validedAvatar = avatarSchema.parse(avatar);
 
-  //email verification
-  const otp = Math.floor(100000 + Math.random() * 900000);
-  //send email
-
-  await sendMail(
-    validedUser.email,
-    "Email Verification",
-    `Your OTP is ${otp}`,
-    `<h1>Your OTP is ${otp}</h1>`
-  );
-
   const user = await User.create({
     ...validedUser,
     avatar: validedAvatar,
   });
+  //email verification
+  const create_token = crypto.randomBytes(64).toString("hex");
+
+  const token_save = await Token.create({
+    userId: user._id,
+    verify_token: create_token,
+  });
+
+  const url = `${process.env.BASE_URL}/${user._id}/verify-email/${create_token}`;
+
+  //send email
+  await sendMail(
+    user.email,
+    "Email Verification Link",
+    `Please click on the link to verify your email. <a href="${url}" style="text-decoration: underline;" target="_blank">Click here to verify</a>`
+  );
+
   const createdUser = await User.findById(user._id).select(
     "-password -refreshToken"
   );
@@ -61,7 +69,9 @@ const register = asyncHandler(async (req, res) => {
   }
   return res
     .status(201)
-    .json(new ApiResponse(200, createdUser, "User Create Success"));
+    .json(
+      new ApiResponse(200, null, "An email sent to your email for verification")
+    );
 });
 
 //login user
@@ -80,6 +90,10 @@ const loginUser = asyncHandler(async (req, res) => {
     const isPasswordValid = await user.isPasswordCorrect(password);
     if (!isPasswordValid) {
       throw new ApiError(401, "Invalid credentials");
+    }
+
+    if (!user.email_verified) {
+      throw new ApiError(401, "Email not verified");
     }
 
     const { accessToken, refreshToken } =
@@ -110,6 +124,34 @@ const loginUser = asyncHandler(async (req, res) => {
   }
 });
 
+//verify email
+const verifyEmail = asyncHandler(async (req, res) => {
+  try {
+    const { userId, token } = req.params;
+    const user = await User.findById(userId);
+    if (!user) {
+      throw new ApiError(404, "User not found");
+    }
+
+    const token_find = await Token.findOne({
+      userId: user._id,
+      verify_token: token,
+    });
+
+    if (!token_find) {
+      throw new ApiError(404, "Invalid or expired token");
+    }
+
+    await User.findByIdAndUpdate(userId, { email_verified: true });
+    await token_find.remove();
+
+    return res.status(200).json(new ApiResponse(200, {}, "Email Verified"));
+  } catch (error) {
+    throw new ApiError(500, error?.message);
+  }
+});
+
+//refresh token
 const refreshAccessToken = asyncHandler(async (req, res) => {
   try {
     const incomingRefreshToken =
@@ -155,6 +197,8 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
     throw new ApiError(500, error?.message);
   }
 });
+
+//logout user
 const logoutUser = asyncHandler(async (req, res) => {
   try {
     const id = req?.user?._id;
@@ -221,4 +265,5 @@ export {
   logoutUser,
   refreshAccessToken,
   register,
+  verifyEmail,
 };
