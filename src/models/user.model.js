@@ -34,9 +34,6 @@ const userSchema = new Schema(
       type: Boolean,
       default: false,
     },
-    otp: {
-      type: String,
-    },
     is_active: {
       type: Boolean,
       default: true,

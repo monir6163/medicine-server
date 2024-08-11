@@ -1,6 +1,6 @@
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
-import { Token } from "../models/token.model.js";
+import { Otp } from "../models/otp.model.js";
 import { User } from "../models/user.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
@@ -44,23 +44,22 @@ const register = asyncHandler(async (req, res) => {
     ...validedUser,
     avatar: validedAvatar,
   });
-  //email verification
-  const create_token = crypto.randomBytes(64).toString("hex");
+  // Generate OTP
+  const otp = crypto.randomInt(100000, 999999).toString(); // 6-digit OTP
+  const otpExpires = Date.now() + 5 * 60 * 1000; // Expires in 5 minutes
 
-  const token_save = await Token.create({
+  await Otp.create({
     userId: user._id,
-    verify_token: create_token,
+    otp,
+    otpExpires,
   });
 
-  const url = `${process.env.BASE_URL}/${user._id}/verify-email/${create_token}`;
-
-  //send email
+  // Send OTP email
   await sendMail(
     user.email,
-    "Email Verification Link",
-    `Please click on the link to verify your email. <a href="${url}" style="text-decoration: underline;" target="_blank">Click here to verify</a>`
+    "Your Verification Code",
+    `Your verification code is ${otp}. It expires in 5 minutes.`
   );
-
   const createdUser = await User.findById(user._id).select(
     "-password -refreshToken"
   );
@@ -70,8 +69,67 @@ const register = asyncHandler(async (req, res) => {
   return res
     .status(201)
     .json(
-      new ApiResponse(200, null, "An email sent to your email for verification")
+      new ApiResponse(
+        200,
+        createdUser,
+        "OTP sent to your email for verification"
+      )
     );
+});
+
+//otp verification
+const verifyOtp = asyncHandler(async (req, res) => {
+  const { userId, otp } = req.body;
+
+  const findOtp = await Otp.findOne({
+    userId,
+    otp,
+    otpExpires: { $gt: Date.now() }, // Check if OTP is still valid
+  });
+
+  if (!findOtp) {
+    throw new ApiError(400, "Invalid or expired OTP");
+  }
+
+  await User.findByIdAndUpdate(userId, { email_verified: true });
+  await Otp.deleteOne({ userId, otp }); // Delete the token after verification
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, null, "Email successfully verified"));
+});
+
+//resend otp verification
+const resendOtp = asyncHandler(async (req, res) => {
+  const { userId } = req.body;
+
+  const user = await User.findById(userId);
+  if (!user) {
+    throw new ApiError(404, "User not found");
+  }
+
+  if (user.email_verified) {
+    throw new ApiError(400, "Email already verified");
+  }
+
+  const otp = crypto.randomInt(100000, 999999).toString(); // Generate a new OTP
+  const otpExpires = Date.now() + 5 * 60 * 1000; // Expires in 5 minutes
+
+  await Otp.updateOne(
+    { userId },
+    { otp, otpExpires },
+    { upsert: true } // Update if exists, insert if not
+  );
+
+  await sendMail(
+    user.email,
+    "Your New Verification Code",
+    `Your new verification code is ${otp}. It expires in 5 minutes.`
+  );
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, null, "New OTP sent to your email"));
 });
 
 //login user
@@ -119,33 +177,6 @@ const loginUser = asyncHandler(async (req, res) => {
           "Login Success"
         )
       );
-  } catch (error) {
-    throw new ApiError(500, error?.message);
-  }
-});
-
-//verify email
-const verifyEmail = asyncHandler(async (req, res) => {
-  try {
-    const { userId, token } = req.params;
-    const user = await User.findById(userId);
-    if (!user) {
-      throw new ApiError(404, "User not found");
-    }
-
-    const token_find = await Token.findOne({
-      userId: user._id,
-      verify_token: token,
-    });
-
-    if (!token_find) {
-      throw new ApiError(404, "Invalid or expired token");
-    }
-
-    await User.findByIdAndUpdate(userId, { email_verified: true });
-    await token_find.remove();
-
-    return res.status(200).json(new ApiResponse(200, {}, "Email Verified"));
   } catch (error) {
     throw new ApiError(500, error?.message);
   }
@@ -227,6 +258,7 @@ const logoutUser = asyncHandler(async (req, res) => {
   }
 });
 
+//change password
 const changePassword = asyncHandler(async (req, res) => {
   try {
     const { oldPassword, newPassword } = req.body;
@@ -243,6 +275,7 @@ const changePassword = asyncHandler(async (req, res) => {
   }
 });
 
+//forgot password
 const forgotPassword = asyncHandler(async (req, res) => {
   try {
     const { email } = req.body;
@@ -265,5 +298,6 @@ export {
   logoutUser,
   refreshAccessToken,
   register,
-  verifyEmail,
+  resendOtp,
+  verifyOtp,
 };
