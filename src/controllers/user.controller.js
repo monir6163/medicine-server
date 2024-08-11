@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import jwt from "jsonwebtoken";
 import { Otp } from "../models/otp.model.js";
+import { ResetOtp } from "../models/resetOtp.model.js";
 import { User } from "../models/user.model.js";
 import { ApiError } from "../utils/ApiError.js";
 import { ApiResponse } from "../utils/ApiResponse.js";
@@ -93,6 +94,13 @@ const verifyOtp = asyncHandler(async (req, res) => {
 
   await User.findByIdAndUpdate(userId, { email_verified: true });
   await Otp.deleteOne({ userId, otp }); // Delete the token after verification
+
+  // Send email notification of email verification
+  await sendMail(
+    findOtp.email,
+    "Email Verification Successful",
+    "Your email has been successfully verified."
+  );
 
   return res
     .status(200)
@@ -267,6 +275,15 @@ const changePassword = asyncHandler(async (req, res) => {
       throw new ApiError(400, "Old and new password is required");
     }
 
+    const isPasswordValid = await user.isPasswordCorrect(oldPassword);
+    if (!isPasswordValid) {
+      throw new ApiError(401, "Invalid old password");
+    }
+
+    user.password = newPassword;
+
+    await user.save();
+
     return res
       .status(200)
       .json(new ApiResponse(200, {}, "Password Changed Successfully"));
@@ -283,9 +300,68 @@ const forgotPassword = asyncHandler(async (req, res) => {
       throw new ApiError(400, "Email is required");
     }
 
+    const user = await User.findOne({ email });
+    if (!user) {
+      throw new ApiError(404, "User not found");
+    }
+
+    // Generate OTP
+    const otp = crypto.randomInt(100000, 999999).toString(); // 6-digit OTP
+    const otpExpires = Date.now() + 5 * 60 * 1000; // Expires in 5 minutes
+
+    // Save OTP to the database
+    await ResetOtp.create({
+      userId: user._id,
+      reset_otp: otp,
+      reset_otp_expires: otpExpires,
+    });
+
+    // Send OTP email
+    await sendMail(
+      user.email,
+      "Password Reset Code",
+      `Your password reset code is ${otp}. It expires in 5 minutes.`
+    );
+
     return res
       .status(200)
-      .json(new ApiResponse(200, {}, "Password reset link sent to email"));
+      .json(new ApiResponse(200, {}, "Password reset code sent to your email"));
+  } catch (error) {
+    throw new ApiError(500, error?.message);
+  }
+});
+
+//reset otp verification
+const resetPassword = asyncHandler(async (req, res) => {
+  try {
+    const { userId, otp, password } = req.body;
+
+    const resetOtp = await ResetOtp.findOne({
+      userId,
+      reset_otp: otp,
+      reset_otp_expires: { $gt: Date.now() }, // Check if OTP is still valid
+    });
+
+    if (!resetOtp) {
+      throw new ApiError(400, "Invalid or expired OTP");
+    }
+
+    const user = await User.findById(userId);
+    user.password = password;
+    await user.save();
+
+    await ResetOtp.deleteOne({ userId, reset_otp: otp }); // Delete the token after verification
+
+    // Send email notification of password change
+    await sendMail(
+      user.email,
+      "Password Reset Successful",
+      "Your password has been successfully reset."
+    );
+
+    return res
+      .status(200)
+      .json(new ApiResponse(200, {}, "Password reset successful"));
   } catch (error) {
     throw new ApiError(500, error?.message);
   }
@@ -299,5 +375,6 @@ export {
   refreshAccessToken,
   register,
   resendOtp,
+  resetPassword,
   verifyOtp,
 };

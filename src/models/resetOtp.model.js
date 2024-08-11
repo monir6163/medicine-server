@@ -1,6 +1,6 @@
 import mongoose, { Schema } from "mongoose";
 
-const tokenSchema = new Schema(
+const resetOtpSchema = new Schema(
   {
     userId: {
       type: Schema.Types.ObjectId,
@@ -8,18 +8,16 @@ const tokenSchema = new Schema(
       unique: true,
       required: true,
     },
-    verify_token: {
+    reset_otp: {
       type: String,
       required: true,
     },
-
-    createdAt: {
-      type: Date,
-      default: Date.now,
-      expires: 3600,
+    reset_otp_expires: {
+      type: Number,
+      required: true,
     },
   },
   { versionKey: false }
 );
 
-export const Token = mongoose.model("Token", tokenSchema);
+export const ResetOtp = mongoose.model("ResetOtp", resetOtpSchema);
