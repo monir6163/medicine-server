@@ -171,7 +171,8 @@ const loginUser = asyncHandler(async (req, res) => {
 
     const options = {
       httpOnly: true,
-      secure: true,
+      secure: process.env.NODE_ENV === "production" ? true : false,
+      sameSite: "none",
     };
 
     return res
@@ -367,14 +368,57 @@ const resetPassword = asyncHandler(async (req, res) => {
   }
 });
 
+//get user profile
+const getProfile = asyncHandler(async (req, res) => {
+  const user = await User.findById(req?.user?._id).select(
+    "-password -refreshToken"
+  );
+  if (!user) {
+    throw new ApiError(404, "User not found");
+  }
+
+  if (!user.is_active) {
+    throw new ApiError(401, "User account is deactivated");
+  }
+  if (!user.email_verified) {
+    throw new ApiError(401, "Email not verified");
+  }
+
+  return res.status(200).json(new ApiResponse(200, user, "User Profile"));
+});
+
+// user status update
+const updateUserStatus = asyncHandler(async (req, res) => {
+  const { userId, status } = req.body;
+  const user = await User.findById(userId);
+  if (!user) {
+    throw new ApiError(404, "User not found");
+  }
+
+  user.is_active = status;
+  await user.save();
+
+  return res
+    .status(200)
+    .json(new ApiResponse(200, {}, "User status updated successfully"));
+});
+
+//user profile data update
+const updateUserProfile = asyncHandler(async (req, res) => {
+  const { userId } = req.body;
+});
+
 export {
   changePassword,
   forgotPassword,
+  getProfile,
   loginUser,
   logoutUser,
   refreshAccessToken,
   register,
   resendOtp,
   resetPassword,
+  updateUserProfile,
+  updateUserStatus,
   verifyOtp,
 };
