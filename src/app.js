@@ -24,6 +24,4 @@ app.get("/", (req, res) => {
 //routes declaration
 app.use("/api/v1/users", userRoutes);
 
-//default route
-
 export { app };
