@@ -18,12 +18,12 @@ app.use(helmet());
 //route imports
 import userRoutes from "./routes/user.route.js";
 
+app.get("/", (req, res) => {
+  res.send("Welcome to the API");
+});
 //routes declaration
 app.use("/api/v1/users", userRoutes);
 
 //default route
-app.get("/", (req, res) => {
-  res.send("Welcome to the API");
-});
 
 export { app };
