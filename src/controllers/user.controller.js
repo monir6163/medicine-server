@@ -8,24 +8,13 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { cloudinaryUpload } from "../utils/cloudinary.js";
 import { sendMail } from "../utils/NodeMailer.Config.js";
+import { generateAccessTokenAndRefreshToken } from "../utils/TokenHelper.js";
 import {
   avatarSchema,
   createUserSchema,
 } from "../validations/Users.validation.js";
 
 // generateAccessToken and generateRefreshToken
-const generateAccessTokenAndRefreshToken = async (userId) => {
-  try {
-    const user = await User.findById(userId);
-    const accessToken = user.generateAccessToken();
-    const refreshToken = user.generateRefreshToken();
-    user.refreshToken = refreshToken;
-    await user.save({ validateBeforeSave: false });
-    return { accessToken, refreshToken };
-  } catch (error) {
-    throw new ApiError(500, "something went wrong while generating token");
-  }
-};
 
 //register user
 const register = asyncHandler(async (req, res) => {
