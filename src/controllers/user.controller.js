@@ -8,7 +8,11 @@ import { ApiResponse } from "../utils/ApiResponse.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { cloudinaryUpload } from "../utils/cloudinary.js";
 import { sendMail } from "../utils/NodeMailer.Config.js";
-import { generateAccessTokenAndRefreshToken } from "../utils/TokenHelper.js";
+import {
+  accessTokenOption,
+  generateAccessTokenAndRefreshToken,
+  refreshTokenOption,
+} from "../utils/TokenHelper.js";
 import {
   avatarSchema,
   createUserSchema,
@@ -158,16 +162,10 @@ const loginUser = asyncHandler(async (req, res) => {
       "-password -refreshToken"
     );
 
-    const options = {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production" ? true : false,
-      sameSite: "none",
-    };
-
     return res
       .status(200)
-      .cookie("accessToken", accessToken, options)
-      .cookie("refreshToken", refreshToken, options)
+      .cookie("accessToken", accessToken, accessTokenOption)
+      .cookie("refreshToken", refreshToken, refreshTokenOption)
       .json(
         new ApiResponse(
           200,
@@ -186,7 +184,7 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
     const incomingRefreshToken =
       req.cookies?.refreshToken || req.body?.refreshToken;
     if (!incomingRefreshToken) {
-      throw new ApiError(401, "Unauthorized");
+      return res.status(401).json({ message: "Unauthorized controller" });
     }
 
     const decodedToken = jwt.verify(
@@ -194,27 +192,26 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
       process.env.REFRESH_TOKEN_SECRET
     );
 
-    const user = await User.findById(decodedToken?._id);
+    const user = await User.findById(decodedToken?._id).select("-password");
     if (!user) {
-      throw new ApiError(401, "Invalid refresh token");
+      return res
+        .status(401)
+        .json({ message: "Invalid refresh token", status: 401 });
     }
 
     if (user?.refreshToken !== incomingRefreshToken) {
-      throw new ApiError(401, "Refresh token revoked");
+      return res
+        .status(401)
+        .json({ message: "Refresh token revoked", status: 401 });
     }
 
-    const { accessToken, newRefreshToken } =
+    const { accessToken, refreshToken: newRefreshToken } =
       await generateAccessTokenAndRefreshToken(user._id);
-
-    const options = {
-      httpOnly: true,
-      secure: true,
-    };
 
     return res
       .status(200)
-      .cookie("accessToken", accessToken, options)
-      .cookie("refreshToken", newRefreshToken, options)
+      .cookie("accessToken", accessToken, accessTokenOption)
+      .cookie("refreshToken", newRefreshToken, refreshTokenOption)
       .json(
         new ApiResponse(
           200,
@@ -223,7 +220,7 @@ const refreshAccessToken = asyncHandler(async (req, res) => {
         )
       );
   } catch (error) {
-    throw new ApiError(500, error?.message);
+    return res.status(500).json({ message: error?.message });
   }
 });
 
@@ -359,6 +356,7 @@ const resetPassword = asyncHandler(async (req, res) => {
 
 //get user profile
 const getProfile = asyncHandler(async (req, res) => {
+  // console.log(req?.user);
   const user = await User.findById(req?.user?._id).select(
     "-password -refreshToken"
   );

@@ -19,8 +19,8 @@ const router = Router();
 router.route("/register").post(upload.single("avatar"), register);
 router.route("/login").post(loginUser);
 router.route("/logout").post(jwtVerify, logoutUser);
-router.route("/refresh-token").post(refreshAccessToken);
 router.route("/profile").get(jwtVerify, getProfile);
+router.route("/refresh-token").post(refreshAccessToken);
 // user satus update
 router.route("/status").post(jwtVerify, updateUserStatus);
 //change password
