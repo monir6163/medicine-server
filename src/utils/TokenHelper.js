@@ -1,4 +1,6 @@
+import crypto from "crypto";
 import { User } from "../models/user.model.js";
+import { ApiError } from "./ApiError.js";
 
 const refreshTokenOption = {
   httpOnly: true,
@@ -10,7 +12,7 @@ const refreshTokenOption = {
 const accessTokenOption = {
   httpOnly: true,
   secure: true,
-  maxAge: 1 * 24 * 60 * 1000, // 1 day
+  maxAge: 60 * 60 * 1000, // 1 hour
   sameSite: "None",
 };
 
@@ -27,8 +29,14 @@ const generateAccessTokenAndRefreshToken = async (userId) => {
   }
 };
 
+// csrf token for security purpose to prevent csrf attack in the application
+const generateCsrfToken = () => {
+  return crypto.randomBytes(64).toString("hex");
+};
+
 export {
   accessTokenOption,
   generateAccessTokenAndRefreshToken,
+  generateCsrfToken,
   refreshTokenOption,
 };
